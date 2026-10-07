@@ -72,32 +72,7 @@ The 2 kΩ series resistors limit the current supplied by the ESP32 GPIO pins and
 
 The project is split into two parts: a Linux server component and an ESP32 firmware component.
 
-┌─────────────────────────────┐
-│       Linux Client          │
-│                             │
-│       gauges.sh             │
-│                             │
-│  Reads CPU and RAM usage    │
-└──────────────┬──────────────┘
-               │
-               │ USB Serial
-               │ 115200 baud
-               │
-┌──────────────▼──────────────┐
-│       ESP32-C3-Zero         │
-│                             │
-│  Receives CPU/RAM values    │
-│  Smooths gauge movement     │
-│  Controls RGB status LED    │
-│  Monitors communication     │
-└──────┬────────┬─────────┬───┘
-       │        │         │
-    GPIO 7   GPIO 6    GPIO 0/1/2
-       │        │         │
-  ┌────▼──┐ ┌──▼────┐ ┌──▼─────────┐
-  │  CPU  │ │  RAM  │ │ RGB LED    │
-  │ Gauge │ │ Gauge │ │            │
-  └───────┘ └───────┘ └────────────┘
+<img src="images/diagram.jpg" alt="Diagram of project" width="300">
 
 ### Linux Server
 
