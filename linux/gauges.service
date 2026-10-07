@@ -1,0 +1,16 @@
+[Unit]
+Description=ESP32 Gauge Telemetry
+After=local-fs.target
+Wants=local-fs.target
+
+[Service]
+Type=simple
+ExecStart=/scripts/gauges.sh
+Restart=always
+RestartSec=5
+User=root
+StandardOutput=null
+StandardError=null
+
+[Install]
+WantedBy=multi-user.target
