@@ -6,6 +6,8 @@ The server sends CPU and physical memory usage over USB to the ESP32, which conv
 The project is intentionally simple. Rather than displaying another set of numbers on a screen, it provides a physical, always-visible indication of server activity. The gauges respond gradually to changes in system load, while a communication failure causes both gauges to enter a visible fault sweep and the RGB LED to turn red.
 
 The Linux side currently monitors CPU and RAM, with the ESP32 firmware providing additional LED control commands that can be used by the server script in future.
+![CPU and RAM Gauges](images/gauges.jpeg)
+![ESP32-C3](images/esp32c3.jpeg)
 ## Features
 
 - Real-time CPU utilisation gauge
