@@ -570,6 +570,12 @@ The gauge face is purely cosmetic and does not affect the electronics. Most gaug
 
 The included template can be modified or replaced with your own design. The important part is that the printed 0 to 100% scale matches the calibrated physical movement of the gauge, this will change for each printer/software/paper-size
 
+### Will this work on Windows or [insert OS here]?
+
+Probably.
+The ESP32 does not care what OS the host is, it just receives serial data of what percentage to set the gauges and to change the LED.
+You will need to update the script accordingly or an equivalent program. 
+
 ### What happens if I change the gauge or resistor?
 
 You will probably need to recalibrate `GAUGE_MAX_PERCENT`.
