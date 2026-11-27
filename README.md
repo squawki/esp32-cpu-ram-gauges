@@ -146,6 +146,8 @@ When telemetry is received again, the fault mode is cleared and the gauges retur
 
 This means the physical panel can indicate a server or USB communication problem even when the server is no longer able to update the gauges.
 
+This fault is about the USB link between the server and the ESP32. An internet outage on the server is a different condition: the gauges keep working normally, and the optional [internet outage detection](#internet-outage-detection-optional) reports it by blinking the LED instead.
+
 ## Installation and Setup
 
 ### 1. Flash the ESP32
@@ -242,6 +244,8 @@ sudo systemctl status gauges.service
 ```
 
 The gauges should now update automatically whenever the server is running.
+
+To use the LED as an internet outage alarm as well, set `INTERNET_CHECK_ENABLED=1` in `/scripts/gauges.sh` before starting the service. See [Internet Outage Detection](#internet-outage-detection-optional).
 
 ### 5. Useful Service Commands
 
@@ -503,6 +507,8 @@ No.
 The project uses USB serial communication between the Linux server and the ESP32.
 
 No Wi-Fi, Bluetooth or network connection is required.
+
+Internet outage detection runs on the server and tests the server's own connection; the ESP32 still needs no network of its own.
 
 
 ### Is swap included in the RAM gauge?
