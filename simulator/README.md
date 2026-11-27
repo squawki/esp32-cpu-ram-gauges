@@ -31,8 +31,10 @@ From the repository root:
 This opens the simulator in its own console window, waits for it to start, then runs the sender against it. Two dials and an LED appear in the simulator window and the sender's console shows one status line per second:
 
 ```text
-CPU: 34%  RAM: 51%  (16.3 / 32.0 GiB)  ESP32: CONNECTED
+CPU: 34%  RAM: 51%  (4.1 / 7.9 GiB)  ESP32: CONNECTED
 ```
+
+![The simulator on Windows: the sender on the left, the dials, LED and received values on the right](images/simulator-windows.png)
 
 Close the sender with `Ctrl+C`; the simulator window is closed for you.
 

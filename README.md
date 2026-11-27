@@ -343,6 +343,8 @@ simulator/
 
 The sender itself lives in [`windows/gauges.ps1`](windows/gauges.ps1). See also [simulator/README.md](simulator/README.md).
 
+![The simulator on Windows: the sender on the left, the dials, LED and received values on the right](simulator/images/simulator-windows.png)
+
 ### Running it
 
 From the repository root:
