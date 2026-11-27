@@ -355,16 +355,25 @@ Requirements: `bash` and `python3` (standard library only). No drivers, no `soca
 ./simulator/linux/simulate.sh
 ```
 
-The simulator creates a pseudo-terminal and the launcher runs the gauge script against it by setting the `DEVICE` environment variable:
+The simulator creates a pseudo-terminal and the launcher runs the gauge script against it by setting the `DEVICE` environment variable. In a terminal the dials are drawn in place; the sender's status lines go to a log that is printed when you stop with `Ctrl+C`:
 
 ```text
 Simulator device: /dev/pts/1
-Sending CPU and RAM usage every second (Ctrl+C to stop)
 
-CPU: 33%  RAM: 43%  (1.9 / 4.3 GiB)  ESP32: CONNECTED
+        .......                  .......
+      ...      ..              ...      ..
+     .O*         .            .         *O.
+     . **        .            .        ** .
+    .    **       .          .       **    .
+    .      +      .          .      +      .
+       28%  CPU                 38%  RAM
+
+   LED: GREEN (50%)   state: OK
+   rx: CPU=28.0  RAM=38.0
+   last command: RAM=38
 ```
 
-The simulator runs headless in that mode and its log is printed when the sender stops. To watch the dials, run the halves separately in two terminals:
+`--no-ui` (or running with output redirected) prints one status line per second instead. To keep the dials and watch the sender's own output at the same time, run the halves in two terminals:
 
 ```bash
 ./simulator/linux/simulator.py            # prints: Device: /dev/pts/7

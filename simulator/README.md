@@ -27,22 +27,35 @@ Requirements: `bash` and `python3` (standard library only). No hardware, no virt
 ./simulator/linux/simulate.sh
 ```
 
-The simulator creates a pseudo-terminal and the launcher runs `linux/gauges.sh` against it by setting the `DEVICE` environment variable:
+The simulator creates a pseudo-terminal and the launcher runs `linux/gauges.sh` against it by setting the `DEVICE` environment variable. In a terminal the dials are drawn in place; the sender's status lines are written to a log and printed when you stop with `Ctrl+C`:
 
 ```text
 Simulator device: /dev/pts/1
-Sending CPU and RAM usage every second (Ctrl+C to stop)
 
-CPU: 33%  RAM: 43%  (1.9 / 4.3 GiB)  ESP32: CONNECTED
+        .......                  .......
+      ...      ..              ...      ..
+     .O*         .            .         *O.
+     . **        .            .        ** .
+    .    **       .          .       **    .
+    .      +      .          .      +      .
+       28%  CPU                 38%  RAM
+
+   LED: GREEN (50%)   state: OK
+   rx: CPU=28.0  RAM=38.0
+   last command: RAM=38
 ```
-
-The launcher runs the simulator headless and prints its log when you stop the sender.
 
 Because the sender talks to a real pseudo-terminal, the serial code path (`stty`, `exec 3<>`) is exercised rather than bypassed.
 
-### Watching the dials
+### Headless and separate terminals
 
-Run the two halves in separate terminals:
+`--no-ui` (or running with output redirected) prints one status line per second instead of the dials:
+
+```bash
+./simulator/linux/simulate.sh --no-ui
+```
+
+To keep the dials and watch the sender's own output at the same time, run the halves in two terminals:
 
 ```bash
 ./simulator/linux/simulator.py
