@@ -16,8 +16,9 @@
     TCP port shared by the simulator and gauges.ps1. Defaults to 7777.
 
 .PARAMETER Source
-    Metric source passed to gauges.ps1. Random (the default) makes the needles
-    move on their own; Cim reads real Windows performance counters.
+    Metric source passed to gauges.ps1. Auto (the default) reports the real
+    CPU and memory of this machine; Random invents values on a pretend 32 GiB
+    machine, which is handy for watching the needles move.
 
 .PARAMETER NoUi
     Run the simulator headless and print its log at the end.
@@ -50,7 +51,7 @@ param(
     [int]$TcpPort = 7777,
 
     [ValidateSet('Auto', 'Cim', 'Proc', 'Random')]
-    [string]$Source = 'Random',
+    [string]$Source = 'Auto',
 
     [switch]$NoUi,
     [int]$Duration = 0,

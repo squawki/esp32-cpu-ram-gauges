@@ -331,7 +331,7 @@ Useful options:
 
 | Option | Meaning |
 |---|---|
-| `-Source Cim` | Use real Windows performance counters instead of simulated values |
+| `-Source` | `Auto` (default) reports this machine's real CPU and memory; `Random` invents values on a pretend 32 GiB machine |
 | `-NoUi` | Run the simulator headless and print its log at the end |
 | `-InternetCheck` | Enable outage detection so the purple blink can be watched |
 | `-KeepSimulatorOpen` | Leave the simulator window open after the script exits |

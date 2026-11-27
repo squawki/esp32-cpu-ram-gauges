@@ -57,7 +57,7 @@ powershell -ExecutionPolicy Bypass -File .\simulator\windows\simulate.ps1
 | Option | Default | Meaning |
 |---|---|---|
 | `-TcpPort` | `7777` | Port shared by the simulator and the sender |
-| `-Source` | `Random` | What the sender reports: `Random` (moving needles), `Cim` (real Windows counters), `Proc` (`/proc` on Linux) |
+| `-Source` | `Auto` | What the sender reports: `Auto` (real CPU and memory of this machine), `Cim` (force Windows counters), `Proc` (force `/proc`), `Random` (invented values on a pretend 32 GiB machine) |
 | `-NoUi` | off | Headless simulator, log printed at the end |
 | `-Duration` | `0` (forever) | Stop after this many seconds |
 | `-InternetCheck` | off | Enable outage detection in the sender so the purple blink can be watched |
