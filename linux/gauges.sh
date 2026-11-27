@@ -13,8 +13,30 @@
 #   RAM gauge -> physical memory utilisation
 #
 # The ESP32 also has an RGB status LED. The firmware supports a number of
-# LED control commands, although this server script currently only sends
-# CPU and RAM telemetry.
+# LED control commands, which this script uses for the optional internet
+# outage detection described below.
+#
+# -----------------------------------------------------------------------------
+# Optional internet outage detection
+# -----------------------------------------------------------------------------
+#
+# Setting INTERNET_CHECK_ENABLED=1 makes the script ping PING_TARGET every
+# CHECK_INTERVAL seconds. The first attempt is followed by a retry only if it
+# fails, up to PING_ATTEMPTS attempts in total.
+#
+# If every attempt fails the internet is considered down and the LED blinks
+# LED_OUTAGE BLINK_COUNT times at the current brightness, then returns to
+# LED_NORMAL (LED=AUTO, i.e. green while telemetry is flowing). The blink
+# repeats every BLINK_INTERVAL seconds while the internet is down, with a
+# fresh check before each blink so recovery is picked up within one interval.
+#
+# The pings run in a background subshell and telemetry is sent between blink
+# steps, so the ESP32's 3 second communication timeout is never reached and
+# the gauges do not enter the fault sweep during a check or a blink.
+#
+# This feature is disabled by default. When disabled the script behaves
+# exactly as before and never sends LED commands, leaving the ESP32 in its
+# automatic LED mode.
 #
 # -----------------------------------------------------------------------------
 # Serial protocol
@@ -46,8 +68,9 @@
 # ESP32 LED commands
 # -----------------------------------------------------------------------------
 #
-# The ESP32 firmware also accepts the following LED commands. They are
-# documented here for future use, but this script does not currently send them.
+# The ESP32 firmware also accepts the following LED commands. The script only
+# sends them when internet outage detection is enabled; otherwise the LED
+# stays in its automatic mode.
 #
 # Automatic mode:
 #
@@ -126,6 +149,7 @@
 # - Bash
 # - awk
 # - stty
+# - ping (only when internet outage detection is enabled)
 # - ESP32-C3-Zero connected by USB
 # - ESP32 firmware configured for the same 115200 baud serial connection
 #
@@ -139,6 +163,61 @@ INTERVAL=1
 
 # How long to wait for ESP32 acknowledgements after sending CPU/RAM.
 ACK_TIMEOUT=0.5
+
+# =============================================================================
+# Internet outage detection (optional)
+# =============================================================================
+#
+# Set INTERNET_CHECK_ENABLED=1 to enable the internet outage blink alert,
+# or 0 to disable it.
+INTERNET_CHECK_ENABLED=0
+
+# Address pinged by the connectivity check. An IP address is used so that the
+# check does not depend on DNS.
+PING_TARGET="1.1.1.1"
+
+# Total attempts per check. Attempt 2 is only made if attempt 1 fails, and
+# attempt 3 only if attempt 2 fails.
+PING_ATTEMPTS=3
+
+# Per-attempt timeout in seconds.
+PING_TIMEOUT=2
+
+# Seconds between checks while the internet is up.
+CHECK_INTERVAL=60
+
+# Seconds between blink sequences while the internet is down.
+BLINK_INTERVAL=30
+
+# Number of flashes per blink sequence.
+BLINK_COUNT=5
+
+# Time in seconds the LED stays on, and then off, during a blink.
+BLINK_STEP=0.25
+
+# LED command used for the blink. LED=RGB keeps the LED's current brightness.
+# Any LED command can be used, for example LED=MAGENTA or LED=RED.
+LED_OUTAGE="LED=RGB,255,0,255"
+
+# LED command sent after each blink to restore the normal colour.
+# LED=AUTO returns to automatic mode (green while telemetry is flowing).
+LED_NORMAL="LED=AUTO"
+
+# Abandon a connectivity check that has not finished in this many seconds and
+# treat the internet as up.
+CHECK_WATCHDOG=20
+
+# =============================================================================
+
+if [ "$INTERNET_CHECK_ENABLED" != "0" ] && [ "$INTERNET_CHECK_ENABLED" != "1" ]; then
+    echo "ERROR: INTERNET_CHECK_ENABLED must be 0 or 1"
+    exit 1
+fi
+
+if [ "$INTERNET_CHECK_ENABLED" -eq 1 ] && ! command -v ping >/dev/null 2>&1; then
+    echo "ERROR: Internet outage detection requires the ping command"
+    exit 1
+fi
 
 # -----------------------------------------------------------------------------
 # Check that the serial device exists
@@ -184,8 +263,22 @@ if ! exec 3<> "$DEVICE"; then
     exit 1
 fi
 
-# Close serial device cleanly when the script exits.
-trap 'exec 3>&-' EXIT
+# -----------------------------------------------------------------------------
+# State directory for the background connectivity check
+# -----------------------------------------------------------------------------
+
+if [ "$INTERNET_CHECK_ENABLED" -eq 1 ]; then
+    STATE_DIR=$(mktemp -d) || exit 1
+    NET_STATE="$STATE_DIR/net.state"
+
+    # Close serial device and clean up state on exit.
+    trap 'exec 3>&-; rm -rf "$STATE_DIR"' EXIT
+else
+    NET_STATE=""
+
+    # Close serial device cleanly when the script exits.
+    trap 'exec 3>&-' EXIT
+fi
 
 # -----------------------------------------------------------------------------
 # Read CPU counters
@@ -240,6 +333,17 @@ read_memory() {
 }
 
 # -----------------------------------------------------------------------------
+# Send a command to the ESP32
+# -----------------------------------------------------------------------------
+
+send_command() {
+    if ! printf '%s\n' "$1" >&3; then
+        echo "ERROR: Failed to send command to ESP32: $1"
+        exit 1
+    fi
+}
+
+# -----------------------------------------------------------------------------
 # Read acknowledgements from ESP32
 # -----------------------------------------------------------------------------
 #
@@ -249,6 +353,9 @@ read_memory() {
 #   ACK RAM=xx.x
 #
 # The script waits briefly for these responses.
+#
+# LED commands are acknowledged with "ACK LED=...". Those acknowledgements are
+# consumed silently because they carry no telemetry information.
 #
 # Other messages from the ESP32, such as:
 #
@@ -302,6 +409,11 @@ read_acknowledgements() {
                 continue
             fi
 
+            # LED acknowledgement
+            if [[ "$RESPONSE" == ACK\ LED=* ]]; then
+                continue
+            fi
+
             # Display other ESP32 messages
             echo "ESP32: $RESPONSE"
 
@@ -314,33 +426,53 @@ read_acknowledgements() {
 }
 
 # -----------------------------------------------------------------------------
-# Initial readings
+# Internet connectivity check
 # -----------------------------------------------------------------------------
+#
+# Runs in a background subshell so that telemetry keeps flowing, and records
+# UP or DOWN in $NET_STATE.
+#
+# The first ping is always attempted. A retry is only made after a failure, so
+# a healthy connection costs a single ping per check.
 
-read PREV_TOTAL PREV_IDLE <<< "$(read_cpu)"
+check_connectivity() {
+    local attempt
 
-echo "CPU and RAM gauge started"
-echo "Device: $DEVICE"
-echo "Sending CPU and RAM usage every second"
-echo "Waiting for ESP32 acknowledgements"
-echo "Press Ctrl+C to stop"
-echo
+    for (( attempt = 1; attempt <= PING_ATTEMPTS; attempt++ )); do
+
+        if ping -n -q -c 1 -W "$PING_TIMEOUT" "$PING_TARGET" >/dev/null 2>&1; then
+            printf 'UP\n' > "$NET_STATE"
+            return 0
+        fi
+
+    done
+
+    printf 'DOWN\n' > "$NET_STATE"
+    return 1
+}
+
+start_internet_check() {
+    rm -f "$NET_STATE"
+    ( check_connectivity ) &
+    CHECK_PID=$!
+    CHECK_STARTED=$SECONDS
+}
 
 # -----------------------------------------------------------------------------
-# Main loop
+# Read CPU/RAM and send telemetry
 # -----------------------------------------------------------------------------
+#
+# Calculate utilisation from the change in cumulative CPU counters since the
+# previous reading and from MemTotal and MemAvailable, then send both values
+# and wait for the acknowledgements.
+#
+# Sets CPU, RAM, MEM_USED, MEM_TOTAL and ESP_STATUS for the caller.
 
-while true; do
+update_telemetry() {
+    local CURR_TOTAL CURR_IDLE TOTAL_DELTA IDLE_DELTA
 
-    sleep "$INTERVAL"
-
-    # -------------------------------------------------------------------------
-    # CPU
-    # -------------------------------------------------------------------------
-    #
-    # Calculate utilisation from the change in cumulative CPU counters since
-    # the previous reading.
-    # -------------------------------------------------------------------------
+    CURR_TOTAL=0
+    CURR_IDLE=0
 
     read CURR_TOTAL CURR_IDLE <<< "$(read_cpu)"
 
@@ -362,13 +494,6 @@ while true; do
         CPU=100
     fi
 
-    # -------------------------------------------------------------------------
-    # RAM
-    # -------------------------------------------------------------------------
-    #
-    # Calculate physical memory utilisation from MemTotal and MemAvailable.
-    # -------------------------------------------------------------------------
-
     read MEM_TOTAL MEM_USED <<< "$(read_memory)"
 
     if [ "$MEM_TOTAL" -gt 0 ]; then
@@ -386,27 +511,10 @@ while true; do
         RAM=100
     fi
 
-    # -------------------------------------------------------------------------
-    # Send values to ESP32
-    # -------------------------------------------------------------------------
-    #
     # CPU and RAM are sent independently so the ESP32 can acknowledge each
     # value separately.
-    # -------------------------------------------------------------------------
-
-    if ! printf "CPU=%d\n" "$CPU" >&3; then
-        echo "ERROR: Failed to send CPU value to ESP32"
-        exit 1
-    fi
-
-    if ! printf "RAM=%d\n" "$RAM" >&3; then
-        echo "ERROR: Failed to send RAM value to ESP32"
-        exit 1
-    fi
-
-    # -------------------------------------------------------------------------
-    # Wait for ESP32 acknowledgements
-    # -------------------------------------------------------------------------
+    send_command "CPU=$CPU"
+    send_command "RAM=$RAM"
 
     read_acknowledgements
 
@@ -418,6 +526,74 @@ while true; do
         ESP_STATUS="NO ACK"
     fi
 
+    PREV_TOTAL=$CURR_TOTAL
+    PREV_IDLE=$CURR_IDLE
+}
+
+# -----------------------------------------------------------------------------
+# Blink the LED for an internet outage
+# -----------------------------------------------------------------------------
+#
+# Telemetry is sent between blink steps so the ESP32 never reaches its 3 second
+# signal timeout, which would force the LED to red and sweep the gauges.
+
+blink_outage() {
+    local i
+
+    echo "Internet DOWN: blinking ${BLINK_COUNT}x ${LED_OUTAGE}"
+
+    for (( i = 0; i < BLINK_COUNT; i++ )); do
+
+        send_command "$LED_OUTAGE"
+        sleep "$BLINK_STEP"
+        update_telemetry
+
+        send_command "LED=OFF"
+        sleep "$BLINK_STEP"
+        update_telemetry
+
+    done
+
+    # Back to the normal colour (green while telemetry flows).
+    send_command "$LED_NORMAL"
+}
+
+# -----------------------------------------------------------------------------
+# Initial readings
+# -----------------------------------------------------------------------------
+
+read PREV_TOTAL PREV_IDLE <<< "$(read_cpu)"
+
+echo "CPU and RAM gauge started"
+echo "Device: $DEVICE"
+echo "Sending CPU and RAM usage every second"
+echo "Waiting for ESP32 acknowledgements"
+
+if [ "$INTERNET_CHECK_ENABLED" -eq 1 ]; then
+    echo "Internet check: $PING_TARGET every ${CHECK_INTERVAL}s (up to ${PING_ATTEMPTS} attempts)"
+else
+    echo "Internet check: disabled"
+fi
+
+echo "Press Ctrl+C to stop"
+echo
+
+# -----------------------------------------------------------------------------
+# Main loop
+# -----------------------------------------------------------------------------
+
+INTERNET_UP=1
+NEXT_CHECK=0
+NEXT_BLINK=0
+CHECK_PID=""
+CHECK_STARTED=0
+
+while true; do
+
+    sleep "$INTERVAL"
+
+    update_telemetry
+
     # -------------------------------------------------------------------------
     # Display values
     # -------------------------------------------------------------------------
@@ -428,10 +604,66 @@ while true; do
     echo "CPU: ${CPU}%  RAM: ${RAM}%  (${MEM_USED_GB} / ${MEM_TOTAL_GB} GiB)  ESP32: ${ESP_STATUS}"
 
     # -------------------------------------------------------------------------
-    # Update CPU baseline
+    # Internet outage detection
     # -------------------------------------------------------------------------
 
-    PREV_TOTAL=$CURR_TOTAL
-    PREV_IDLE=$CURR_IDLE
+    if [ "$INTERNET_CHECK_ENABLED" -eq 1 ]; then
+
+        NOW=$SECONDS
+
+        # Abandon a check that has hung (for example a misbehaving ping) and
+        # assume the internet is up rather than raising a false alarm.
+        if [ -n "$CHECK_PID" ] && [ $((NOW - CHECK_STARTED)) -ge "$CHECK_WATCHDOG" ]; then
+            kill "$CHECK_PID" 2>/dev/null
+            CHECK_PID=""
+            echo "WARNING: connectivity check timed out; assuming internet is up"
+            NEXT_CHECK=$((NOW + CHECK_INTERVAL))
+        fi
+
+        # Start a connectivity check when due.
+        if [ -z "$CHECK_PID" ] && [ "$NOW" -ge "$NEXT_CHECK" ]; then
+            start_internet_check
+            NEXT_CHECK=$((NOW + CHECK_INTERVAL))
+        fi
+
+        # Collect a finished check.
+        if [ -n "$CHECK_PID" ] && [ -s "$NET_STATE" ]; then
+
+            RESULT=$(<"$NET_STATE")
+            CHECK_PID=""
+
+            if [ "$RESULT" = "DOWN" ]; then
+
+                if [ "$INTERNET_UP" -eq 1 ]; then
+                    echo "Internet outage detected (no reply from $PING_TARGET after $PING_ATTEMPTS attempts)"
+                    logger -t gauges "Internet outage: no reply from $PING_TARGET after $PING_ATTEMPTS attempts"
+                fi
+
+                INTERNET_UP=0
+                NEXT_BLINK=$NOW
+                NEXT_CHECK=$((NOW + BLINK_INTERVAL))
+
+            elif [ "$RESULT" = "UP" ]; then
+
+                if [ "$INTERNET_UP" -eq 0 ]; then
+                    echo "Internet restored"
+                    logger -t gauges "Internet restored (reply from $PING_TARGET)"
+                fi
+
+                INTERNET_UP=1
+                NEXT_CHECK=$((NOW + CHECK_INTERVAL))
+                NEXT_BLINK=0
+
+            fi
+
+        fi
+
+        # Blink while the internet is down.
+        if [ "$INTERNET_UP" -eq 0 ] && [ "$NOW" -ge "$NEXT_BLINK" ]; then
+            blink_outage
+            NEXT_BLINK=$((SECONDS + BLINK_INTERVAL))
+        fi
+
+    fi
 
 done

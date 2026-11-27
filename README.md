@@ -5,7 +5,7 @@ The server sends CPU and physical memory usage over USB to the ESP32, which conv
 
 The project is intentionally simple. Rather than displaying another set of numbers on a screen, it provides a physical, always-visible indication of server activity. The gauges respond gradually to changes in system load, while a communication failure causes both gauges to enter a visible fault sweep and the RGB LED to turn red.
 
-The Linux side currently monitors CPU and RAM, with the ESP32 firmware providing additional LED control commands that can be used by the server script in future.
+The Linux side monitors CPU and RAM, and can optionally watch internet connectivity and blink the LED while the connection is down. The ESP32 firmware provides the LED control commands the server script uses for this.
 <br>
 <img src="images/gauges.jpeg" alt="ESP32 CPU and RAM Gauges" width="300">
 <img src="images/esp32c3.jpeg" alt="ESP32-C3" width="300">
@@ -27,6 +27,7 @@ The Linux side currently monitors CPU and RAM, with the ESP32 firmware providing
 - Manual RGB colour control through the ESP32 serial interface
 - Adjustable LED brightness
 - Separate LED on/off and brightness controls
+- Optional internet outage detection with a configurable LED blink alert
 - ESP32 acknowledgement of received CPU and RAM values
 - Runs as a systemd service on the Linux server
 - No network connection required between the server and ESP32
@@ -96,6 +97,8 @@ RAM=68
 ```
 
 The server sends updated values once per second.
+
+Optionally, the script can also monitor internet connectivity and use the LED as an outage alarm. This is disabled by default; see [Internet Outage Detection](#internet-outage-detection-optional).
 
 ### ESP32
 
@@ -339,11 +342,75 @@ It can then be restored with:
 LED=ON
 ```
 
-### Future Linux Integration
+### LED Integration
 
-The current `gauges.sh` script only sends CPU and RAM telemetry. It does not currently send LED control commands.
+By default `gauges.sh` only sends CPU and RAM telemetry and leaves the LED in automatic mode.
 
-The LED command interface is already implemented in the ESP32 firmware, allowing additional status information or server events to be added to the Linux side in the future without changing the ESP32 protocol.
+When [internet outage detection](#internet-outage-detection-optional) is enabled the script also sends LED commands: it blinks a configurable colour while the internet is unreachable and returns to `LED=AUTO` afterwards.
+
+The rest of the LED command interface remains available for other server events without changing the ESP32 protocol.
+
+## Internet Outage Detection (Optional)
+
+`gauges.sh` can watch internet connectivity and use the RGB LED as an outage alarm. The feature is disabled by default. Enable it by setting `INTERNET_CHECK_ENABLED=1` in the configuration block at the top of the script and restarting the service.
+
+```bash
+INTERNET_CHECK_ENABLED=1
+```
+
+### How It Works
+
+Every `CHECK_INTERVAL` seconds (default 60) the script pings `PING_TARGET` (default `1.1.1.1`).
+
+The first ping is always attempted. A retry is only made if the previous attempt failed, up to `PING_ATTEMPTS` attempts in total (default 3). Each attempt waits `PING_TIMEOUT` seconds (default 2) for a reply, so a failed check is confirmed in about six seconds.
+
+If every attempt fails the internet is considered down and the LED blinks `BLINK_COUNT` times (default 5) using `LED_OUTAGE` (default `LED=RGB,255,0,255`, purple), switching between the colour and `LED=OFF` every `BLINK_STEP` seconds (default 0.25). After the last flash the LED returns to `LED_NORMAL` (default `LED=AUTO`), which is green while telemetry is flowing.
+
+While the internet is down the blink repeats every `BLINK_INTERVAL` seconds (default 30). A fresh check runs before each blink, so a recovery is detected within one blink interval and the blinking stops.
+
+Because `LED=RGB` keeps the LED's configured brightness (`LED=DIM`), the blink uses the same brightness as the normal green indicator.
+
+### Settings
+
+| Setting | Default | Description |
+|---|---|---|
+| `INTERNET_CHECK_ENABLED` | `0` | `0` disables the feature, `1` enables it |
+| `PING_TARGET` | `1.1.1.1` | Address to ping. An IP is used so the check does not depend on DNS |
+| `PING_ATTEMPTS` | `3` | Total attempts per check; a retry only happens after a failure |
+| `PING_TIMEOUT` | `2` | Seconds to wait for each reply |
+| `CHECK_INTERVAL` | `60` | Seconds between checks while the internet is up |
+| `BLINK_INTERVAL` | `30` | Seconds between blink sequences while the internet is down |
+| `BLINK_COUNT` | `5` | Flashes per blink sequence |
+| `BLINK_STEP` | `0.25` | Seconds the LED stays on, and then off, during a blink |
+| `LED_OUTAGE` | `LED=RGB,255,0,255` | Command used for the blink. Any LED command works, for example `LED=MAGENTA` |
+| `LED_NORMAL` | `LED=AUTO` | Command sent after each blink to restore the normal colour |
+| `CHECK_WATCHDOG` | `20` | Abandon a stuck check after this many seconds and assume the internet is up |
+
+### Logging
+
+Outages and recoveries are written to the system log, so they can be reviewed even though the service discards its standard output:
+
+```bash
+journalctl -t gauges
+```
+
+```text
+Internet outage: no reply from 1.1.1.1 after 3 attempts
+Internet restored (reply from 1.1.1.1)
+```
+
+When the script is run manually, the console also shows each blink:
+
+```text
+Internet DOWN: blinking 5x LED=RGB,255,0,255
+```
+
+### Notes
+
+- The pings run in a background subshell and telemetry continues between blink steps, so the ESP32's 3 second communication timeout is never reached and the gauges do not enter the fault sweep.
+- Detection uses ICMP echo. Networks that block or rate-limit ICMP will produce false alarms; choose a target your provider answers.
+- `ping` must be installed. It is part of iputils on most Linux distributions.
+- No firmware change or reflash is needed. The blink is produced with the LED commands the firmware already supports.
 
 ## Frequently Asked Questions
 
@@ -467,6 +534,14 @@ Yes.
 The ESP32 supports predefined colours, arbitrary RGB values, brightness control, on/off control and automatic status mode.
 
 See the [LED Control](#led-control) section for the available commands.
+
+### Why doesn't the LED blink when my internet connection goes down?
+
+Internet outage detection is disabled by default.
+
+Set `INTERNET_CHECK_ENABLED=1` in the configuration block at the top of `gauges.sh`, adjust `PING_TARGET` if necessary and restart the service.
+
+See [Internet Outage Detection](#internet-outage-detection-optional) for the available settings.
 
 ### Why does my ESP32 show a different serial device name?
 
