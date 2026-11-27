@@ -28,6 +28,7 @@ The Linux side monitors CPU and RAM, and can optionally watch internet connectiv
 - Adjustable LED brightness
 - Separate LED on/off and brightness controls
 - Optional internet outage detection with a configurable LED blink alert
+- Windows support through a PowerShell port, including a simulator for testing without hardware
 - ESP32 acknowledgement of received CPU and RAM values
 - Runs as a systemd service on the Linux server
 - No network connection required between the server and ESP32
@@ -268,6 +269,103 @@ sudo systemctl disable gauges.service
 ```
 
 Once installed, the ESP32 can remain connected to the server and operate without any additional software or network connection.
+
+## Windows
+
+`windows/gauges.ps1` is a PowerShell port of `linux/gauges.sh`. It sends the same commands to the same firmware, so nothing needs to change on the ESP32 side.
+
+### Requirements
+
+- Windows 10 or 11 with PowerShell 5.1 (built in) or PowerShell 7
+- The ESP32 connected by USB. Windows 10 and 11 normally install the USB CDC driver automatically and the board appears as `COMx`.
+
+### Running the script
+
+Find the port name with:
+
+```powershell
+[System.IO.Ports.SerialPort]::GetPortNames()
+```
+
+Then run the script:
+
+```powershell
+.\gauges.ps1 -Port COM3
+```
+
+If `-Port` is omitted the first available serial port is used.
+
+Internet outage detection works exactly as it does on Linux:
+
+```powershell
+.\gauges.ps1 -Port COM3 -InternetCheck -PingTarget 1.1.1.1
+```
+
+`-CheckInterval` and `-BlinkInterval` override the timing values in the settings block at the top of the script. Windows has no journald, so pass `-LogFile` to record outages and recoveries:
+
+```powershell
+.\gauges.ps1 -Port COM3 -InternetCheck -LogFile C:\ProgramData\esp32-gauges\gauges.log
+```
+
+CPU utilisation comes from `Win32_PerfFormattedData_PerfOS_Processor` and memory from `Win32_PerfFormattedData_PerfOS_Memory` (`AvailableMBytes`), which matches the Linux script's use of `MemAvailable` rather than plain free memory.
+
+### Simulator
+
+`windows/simulator.ps1` pretends to be the ESP32, so the telemetry path can be tested without hardware. It accepts the same commands, replies with the same acknowledgements, and reproduces the firmware's behaviour: a 3 second communication timeout, `SIGNAL LOST`, a red LED at full brightness and a sweeping needle pair.
+
+`windows/simulate.ps1` starts both and shows the dials:
+
+```powershell
+.\simulate.ps1
+```
+
+The dials and the LED are drawn in the simulator's console window. The simulator and the script talk over TCP on `127.0.0.1:7777`, so no virtual serial driver is needed.
+
+```powershell
+.\simulate.ps1 -Duration 60                 # stop after a minute
+.\simulate.ps1 -NoUi                        # headless, one status line per second
+.\simulate.ps1 -InternetCheck -PingTarget 192.0.2.1 -CheckInterval 10 -BlinkInterval 8
+```
+
+Useful options:
+
+| Option | Meaning |
+|---|---|
+| `-Source Cim` | Use real Windows performance counters instead of simulated values |
+| `-NoUi` | Run the simulator headless and print its log at the end |
+| `-InternetCheck` | Enable outage detection so the purple blink can be watched |
+| `-KeepSimulatorOpen` | Leave the simulator window open after the script exits |
+
+`windows/simulator.ps1` can also be run on its own to check how the dials render at a given value:
+
+```powershell
+.\simulator.ps1 -Preview 42
+```
+
+To exercise the serial code path as well, install a virtual null-modem pair such as [com0com](https://sourceforge.net/projects/com0com/) (`COM10` <-> `COM11`), then run:
+
+```powershell
+.\simulator.ps1 -Port COM11
+.\gauges.ps1 -Port COM10 -InternetCheck
+```
+
+### Running as a service
+
+Windows has no systemd. Either use Task Scheduler with a task that runs at startup:
+
+```text
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\scripts\gauges.ps1 -Port COM3 -InternetCheck -LogFile C:\ProgramData\esp32-gauges\gauges.log
+```
+
+or install the script as a service with [NSSM](https://nssm.cc/):
+
+```text
+nssm install ESP32Gauges "C:\Program Files\PowerShell\7\pwsh.exe" "-NoProfile -File C:\scripts\gauges.ps1 -Port COM3"
+nssm set ESP32Gauges AppRestartDelay 5000
+```
+
+`-ExecutionPolicy Bypass` on the command line avoids changing the machine-wide execution policy.
+
 ## LED Control
 
 The ESP32 firmware supports several serial commands for controlling the RGB status LED.
@@ -653,9 +751,9 @@ The included template can be modified or replaced with your own design. The impo
 
 ### Will this work on Windows or [insert OS here]?
 
-Probably.
-The ESP32 does not care what OS the host is, it just receives serial data of what percentage to set the gauges and to change the LED.
-You will need to update the script accordingly or an equivalent program. 
+Yes for Windows: `windows/gauges.ps1` is a PowerShell port of the Linux script, with a simulator for testing without hardware. See the [Windows](#windows) section.
+
+For other operating systems, the ESP32 does not care what the host is, it just receives serial data of what percentage to set the gauges and to change the LED. You will need to update the script accordingly or write an equivalent program.
 
 ### What happens if I change the gauge or resistor?
 
