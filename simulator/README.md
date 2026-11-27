@@ -29,21 +29,7 @@ Requirements: `bash` and `python3` (standard library only). No hardware, no virt
 
 The simulator creates a pseudo-terminal and the launcher runs `linux/gauges.sh` against it by setting the `DEVICE` environment variable. In a terminal the dials are drawn in place; the sender's status lines are written to a log and printed when you stop with `Ctrl+C`:
 
-```text
-Simulator device: /dev/pts/1
-
-        .......                  .......
-      ...      ..              ...      ..
-     .O*         .            .         *O.
-     . **        .            .        ** .
-    .    **       .          .       **    .
-    .      +      .          .      +      .
-       28%  CPU                 38%  RAM
-
-   LED: GREEN (50%)   state: OK
-   rx: CPU=28.0  RAM=38.0
-   last command: RAM=38
-```
+![The Linux simulator: two dials, the LED line, the values received and the last command](images/simulator-linux.jpg)
 
 Because the sender talks to a real pseudo-terminal, the serial code path (`stty`, `exec 3<>`) is exercised rather than bypassed.
 

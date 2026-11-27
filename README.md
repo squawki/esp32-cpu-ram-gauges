@@ -357,21 +357,7 @@ Requirements: `bash` and `python3` (standard library only). No drivers, no `soca
 
 The simulator creates a pseudo-terminal and the launcher runs the gauge script against it by setting the `DEVICE` environment variable. In a terminal the dials are drawn in place; the sender's status lines go to a log that is printed when you stop with `Ctrl+C`:
 
-```text
-Simulator device: /dev/pts/1
-
-        .......                  .......
-      ...      ..              ...      ..
-     .O*         .            .         *O.
-     . **        .            .        ** .
-    .    **       .          .       **    .
-    .      +      .          .      +      .
-       28%  CPU                 38%  RAM
-
-   LED: GREEN (50%)   state: OK
-   rx: CPU=28.0  RAM=38.0
-   last command: RAM=38
-```
+![The Linux simulator: two dials, the LED line, the values received and the last command](simulator/images/simulator-linux.jpg)
 
 `--no-ui` (or running with output redirected) prints one status line per second instead. To keep the dials and watch the sender's own output at the same time, run the halves in two terminals:
 
