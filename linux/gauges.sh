@@ -274,8 +274,9 @@ if [ "$INTERNET_CHECK_ENABLED" -eq 1 ]; then
     STATE_DIR=$(mktemp -d) || exit 1
     NET_STATE="$STATE_DIR/net.state"
 
-    # Close serial device and clean up state on exit.
-    trap 'exec 3>&-; rm -rf "$STATE_DIR"' EXIT
+    # Restore the normal colour on exit (so stopping the service mid-blink does
+    # not leave the LED purple or off), then close the serial device.
+    trap 'printf "%s\n" "$LED_NORMAL" >&3 2>/dev/null; sleep 0.1; exec 3>&-; rm -rf "$STATE_DIR"' EXIT
 else
     NET_STATE=""
 
@@ -574,6 +575,11 @@ echo "Waiting for ESP32 acknowledgements"
 
 if [ "$INTERNET_CHECK_ENABLED" -eq 1 ]; then
     echo "Internet check: $PING_TARGET every ${CHECK_INTERVAL}s (up to ${PING_ATTEMPTS} attempts)"
+
+    # Clear any colour left behind by a run that was killed mid-blink, or by an
+    # earlier install of this feature, so the LED always starts from its normal
+    # state. Harmless when the LED is already correct.
+    send_command "$LED_NORMAL"
 else
     echo "Internet check: disabled"
 fi

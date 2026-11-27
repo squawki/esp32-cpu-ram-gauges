@@ -591,6 +591,7 @@ Internet DOWN: blinking 5x LED=RGB,255,0,255
 ### Notes
 
 - The pings run in a background subshell and telemetry continues between blink steps, so the ESP32's 3 second communication timeout is never reached and the gauges do not enter the fault sweep.
+- `LED_NORMAL` is sent when the script starts and again when it stops, so a run killed in the middle of a blink (or a reboot) cannot leave the LED stuck on the outage colour.
 - Detection uses ICMP echo. Networks that block or rate-limit ICMP will produce false alarms; choose a target your provider answers.
 - `ping` must be installed. It is part of iputils on most Linux distributions.
 - No firmware change or reflash is needed. The blink is produced with the LED commands the firmware already supports.
