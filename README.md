@@ -28,7 +28,8 @@ The Linux side monitors CPU and RAM, and can optionally watch internet connectiv
 - Adjustable LED brightness
 - Separate LED on/off and brightness controls
 - Optional internet outage detection with a configurable LED blink alert
-- Windows support through a PowerShell port, including a simulator for testing without hardware
+- Windows support through a PowerShell port
+- Simulators for Linux and Windows, for testing without hardware
 - ESP32 acknowledgement of received CPU and RAM values
 - Runs as a systemd service on the Linux server
 - No network connection required between the server and ESP32
@@ -309,10 +310,6 @@ Internet outage detection works exactly as it does on Linux:
 
 CPU utilisation comes from `Win32_PerfFormattedData_PerfOS_Processor` and memory from `Win32_PerfFormattedData_PerfOS_Memory` (`AvailableMBytes`), which matches the Linux script's use of `MemAvailable` rather than plain free memory.
 
-### Simulator
-
-The sender can be run against a simulator instead of the ESP32, so the whole path can be exercised before the board is wired up. See [Simulator](#simulator) below.
-
 ### Running as a service
 
 Windows has no systemd. Either use Task Scheduler with a task that runs at startup:
@@ -330,79 +327,100 @@ nssm set ESP32Gauges AppRestartDelay 5000
 
 `-ExecutionPolicy Bypass` on the command line avoids changing the machine-wide execution policy.
 
+### Simulator
+
+The sender can be run against a simulator instead of the ESP32, so the whole path can be exercised without hardware. See [Simulator](#simulator) below.
+
 ## Simulator
 
-`simulator/windows/simulator.ps1` stands in for the ESP32-C3, so the sender can be tested without hardware. It accepts the same commands, answers with the same acknowledgements, and behaves like the firmware when telemetry stops.
+The sender can run against a simulator instead of the ESP32, so the whole path can be exercised before the board is wired up. A fake ESP32 is provided for both platforms:
 
 ```text
 simulator/
+├── linux/
+│   ├── simulator.py     # the fake ESP32, over a pseudo-terminal
+│   └── simulate.sh      # starts the simulator and linux/gauges.sh together
 └── windows/
-    ├── simulator.ps1   # the fake ESP32: dials, LED, ACKs, fault mode
-    └── simulate.ps1    # launcher: starts the simulator and the sender together
+    ├── simulator.ps1    # the fake ESP32, over TCP or a serial port
+    └── simulate.ps1     # starts both
 ```
 
-The sender itself lives in [`windows/gauges.ps1`](windows/gauges.ps1). See also [simulator/README.md](simulator/README.md).
+The senders live in [`linux/gauges.sh`](linux/gauges.sh) and [`windows/gauges.ps1`](windows/gauges.ps1). Full guides are in [simulator/README.md](simulator/README.md).
 
-![The simulator on Windows: the sender on the left, the dials, LED and received values on the right](simulator/images/simulator-windows.png)
+### Linux
 
-### Running it
+Requirements: `bash` and `python3` (standard library only). No drivers, no `socat`, no hardware.
 
-From the repository root:
+```bash
+./simulator/linux/simulate.sh
+```
+
+The simulator creates a pseudo-terminal and the launcher runs the gauge script against it by setting the `DEVICE` environment variable:
+
+```text
+Simulator device: /dev/pts/1
+Sending CPU and RAM usage every second (Ctrl+C to stop)
+
+CPU: 33%  RAM: 43%  (1.9 / 4.3 GiB)  ESP32: CONNECTED
+```
+
+The simulator runs headless in that mode and its log is printed when the sender stops. To watch the dials, run the halves separately in two terminals:
+
+```bash
+./simulator/linux/simulator.py            # prints: Device: /dev/pts/7
+DEVICE=/dev/pts/7 ./linux/gauges.sh
+```
+
+Because the pseudo-terminal is a real tty, the serial code path (`stty`, `exec 3<>`) is exercised rather than bypassed.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--device PATH` | none | Attach to an existing tty/pty instead of creating one |
+| `--write-device-file PATH` | none | Write the device path to this file |
+| `--no-ui` | off | One status line per second instead of the dials |
+| `--no-color` | off | Do not colour the LED line |
+| `--preview N` | none | Draw one frame at N percent and exit |
+| `--duration SECONDS` | `0` (forever) | Stop after this many seconds |
+| `--fault-timeout SECONDS` | `3` | Silence before `SIGNAL LOST` and the fault sweep |
+
+### Windows
+
+Requirements: Windows 10 or 11 with PowerShell 5.1 (built in) or PowerShell 7.
 
 ```powershell
 .\simulator\windows\simulate.ps1
 ```
 
-The launcher opens the simulator in a second console window, waits for it, then runs `windows/gauges.ps1 -Simulate` against it and closes the simulator when you press `Ctrl+C`.
-
-The three scripts can also be copied into a single folder anywhere — `C:\gauges`, a USB stick — because the launcher looks for `gauges.ps1` next to itself before falling back to `..\..\windows\gauges.ps1` and the `-GaugesPath` parameter:
+The launcher opens the simulator in its own console window, waits for it, then runs `windows/gauges.ps1 -Simulate` against it over TCP on `127.0.0.1:7777`, so no virtual serial driver is needed. The three scripts can also be copied into a single folder anywhere: the launcher looks for `gauges.ps1` next to itself before falling back to `..\..\windows\gauges.ps1`.
 
 ```powershell
-C:\gauges> .\simulate.ps1
+.\simulator\windows\simulate.ps1 -Duration 60
+.\simulator\windows\simulate.ps1 -NoUi
+.\simulator\windows\simulate.ps1 -InternetCheck -PingTarget 192.0.2.1 -CheckInterval 10 -BlinkInterval 8
+.\simulator\windows\simulator.ps1 -Preview 42
 ```
 
-The simulator window shows two dials, an LED, the current state, the last CPU and RAM values it received and the last command it processed; the sender prints one status line per second:
-
-```text
-CPU: 44%  RAM: 51%  (4.1 / 7.9 GiB)  ESP32: CONNECTED
-```
-
-No drivers are involved: the two halves talk over TCP on `127.0.0.1:7777`.
-
-### Options
-
-`simulate.ps1`:
-
-| Option | Default | Meaning |
+| Option (simulate.ps1) | Default | Meaning |
 |---|---|---|
-| `-TcpPort` | `7777` | Port shared with the simulator |
+| `-TcpPort` | `7777` | Port shared by the simulator and the sender |
 | `-Source` | `Auto` | `Auto` reports this machine's real CPU and memory; `Random` invents values on a pretend 32 GiB machine |
-| `-NoUi` | off | Headless simulator; its log is printed when the run ends |
+| `-NoUi` | off | Headless simulator, log printed at the end |
 | `-Duration` | `0` (forever) | Stop after this many seconds |
 | `-InternetCheck` | off | Enable outage detection so the purple blink can be watched |
 | `-PingTarget`, `-CheckInterval`, `-BlinkInterval` | script defaults | Passed through to the sender |
 | `-GaugesPath` | sibling, then `..\..\windows\gauges.ps1` | Where to find the sender |
 | `-KeepSimulatorOpen` | off | Leave the simulator window open after the sender exits |
 
-`simulator.ps1`:
-
-| Option | Default | Meaning |
+| Option (simulator.ps1) | Default | Meaning |
 |---|---|---|
 | `-TcpPort` | `7777` | Listen for one TCP client |
 | `-Port` | none | Use a real or virtual serial port instead, for example `COM11` |
 | `-Baud` | `115200` | Serial baud rate |
 | `-NoUi` | off | One status line per second instead of the dials |
-| `-Preview` | none | Draw a single frame at the given percentage and exit, for example `-Preview 42` |
+| `-Preview` | none | Draw one frame at the given percentage and exit |
 | `-Duration` | `0` (forever) | Stop after this many seconds |
 
-Useful invocations:
-
-```powershell
-.\simulator\windows\simulate.ps1 -Duration 60                       # stop after a minute
-.\simulator\windows\simulate.ps1 -NoUi                              # no dials, text log only
-.\simulator\windows\simulate.ps1 -InternetCheck -PingTarget 192.0.2.1 -CheckInterval 10 -BlinkInterval 8
-.\simulator\windows\simulator.ps1 -Preview 42                       # render one frame
-```
+![The simulator on Windows: the sender on the left, the dials, LED and received values on the right](simulator/images/simulator-windows.png)
 
 ### What it reproduces
 
@@ -410,35 +428,29 @@ Useful invocations:
 - Every `LED=` command the firmware accepts — `AUTO`, `ON`, `OFF`, `DIM,n`, the seven named colours and `RGB,r,g,b` — with the matching `ACK LED=...` and `ERROR:` replies
 - The 3 second communication timeout: `SIGNAL LOST`, the LED forced to red at full brightness and the needles sweeping until telemetry returns (`SIGNAL RESTORED`)
 - Dimming to the configured brightness after the first telemetry message, and brightness being kept when the colour changes
+- The last CPU and RAM values received, shown under the dials so a mismatch with the sender is visible
 
 It does not reproduce the 500 Hz PWM, the gauge smoothing (the needles move instantly) or the printed gauge faces.
 
 ### Watching the outage blink
 
-Point the sender at an address that cannot answer, so the outage path triggers straight away:
+Point the sender at an address that cannot answer so the outage path triggers straight away. On Windows:
 
 ```powershell
 .\simulator\windows\simulate.ps1 -InternetCheck -PingTarget 192.0.2.1 -CheckInterval 10 -BlinkInterval 8
 ```
 
-The LED in the simulator turns purple, blinks five times, returns to green and repeats every eight seconds.
+On Linux, set `PING_TARGET` and shorten `CHECK_INTERVAL` / `BLINK_INTERVAL` in `gauges.sh`, then run the simulator and the sender as shown above.
 
-### Exercising the serial path
-
-TCP bypasses the serial code in the sender. To test that as well, install a virtual null-modem pair such as [com0com](https://sourceforge.net/projects/com0com/) (`COM10` <-> `COM11`) and run the two halves separately:
-
-```powershell
-.\simulator\windows\simulator.ps1 -Port COM11
-.\windows\gauges.ps1 -Port COM10 -InternetCheck
-```
+The LED turns purple, blinks five times, returns to green and repeats every interval.
 
 ### Troubleshooting
 
 - **`404: Not Found` when running a script** — the file is a saved GitHub error page; re-download it or clone the repository.
-- **"running scripts is disabled on this system"** — use `powershell -ExecutionPolicy Bypass -File .\simulator\windows\simulate.ps1`.
+- **"running scripts are disabled on this system"** — use `powershell -ExecutionPolicy Bypass -File .\simulator\windows\simulate.ps1`.
 - **"Could not connect to the simulator at 127.0.0.1:7777"** — the simulator is not running, or another program owns the port; pass `-TcpPort 7778` to both halves.
-- **Dials do not appear** — cursor positioning is unavailable in PowerShell ISE and redirected consoles; use a normal console window or `-NoUi`.
-- **Needles never move** — the sender is not connected; check for `ESP32: CONNECTED` in its output and that both halves use the same port.
+- **Dials do not appear** — the panel needs a real terminal; use a normal console window, or the headless mode (`-NoUi` / `--no-ui`).
+- **Needles never move** — the sender is not connected; check for `ESP32: CONNECTED` in its output.
 
 ## LED Control
 
