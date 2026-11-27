@@ -388,6 +388,9 @@ function Update-Telemetry {
     $cpu = Get-CpuPercent
     $usedMb = Get-MemoryUsedMb
 
+    if ($cpu -lt 0) { $cpu = 0 }
+    if ($cpu -gt 100) { $cpu = 100 }
+
     if ($script:TotalMemoryMb -le 0) { $script:TotalMemoryMb = $usedMb }
 
     $ram = 0

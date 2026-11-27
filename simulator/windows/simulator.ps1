@@ -94,6 +94,8 @@ $script:ManualGreen = 0
 $script:ManualBlue = 0
 
 $script:LastCommand = '(none)'
+$script:LastCpuRx = '(none)'
+$script:LastRamRx = '(none)'
 
 # =============================================================================
 # Rendering
@@ -235,6 +237,7 @@ function Get-PanelLines {
 
     $lines += ''
     $lines += ('   LED: {0} ({1}%)   state: {2}' -f $led.Name.ToUpper(), $led.Percent, $state)
+    $lines += ('   rx: CPU={0}  RAM={1}' -f $script:LastCpuRx, $script:LastRamRx)
     $lines += ('   last command: {0}' -f $script:LastCommand)
     $lines += ''
 
@@ -297,6 +300,7 @@ function Set-CpuValue {
     $script:HasSignal = $true
     $script:LastSignal = Get-Date
     $script:BootFullBrightness = $false
+    $script:LastCpuRx = (Format-AckValue $number)
 
     return ('ACK CPU={0}' -f (Format-AckValue $number))
 }
@@ -317,6 +321,7 @@ function Set-RamValue {
     $script:HasSignal = $true
     $script:LastSignal = Get-Date
     $script:BootFullBrightness = $false
+    $script:LastRamRx = (Format-AckValue $number)
 
     return ('ACK RAM={0}' -f (Format-AckValue $number))
 }
