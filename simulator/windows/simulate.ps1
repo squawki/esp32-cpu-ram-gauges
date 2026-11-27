@@ -34,8 +34,8 @@
     Leave the simulator window open after gauges.ps1 exits.
 
 .PARAMETER GaugesPath
-    Path to gauges.ps1. Defaults to ../../windows/gauges.ps1 relative to this
-    script.
+    Path to gauges.ps1. By default the launcher looks for gauges.ps1 next to
+    itself, then for ../../windows/gauges.ps1 in the repository layout.
 
 .EXAMPLE
     .\simulate.ps1
@@ -69,17 +69,32 @@ param(
 $here = $PSScriptRoot
 $simulatorPath = Join-Path $here 'simulator.ps1'
 
+# Find the sender. It is either next to this script (all three files copied
+# into one folder, wherever that folder is) or in windows/ in the repository.
 if ($GaugesPath) {
-    $gaugesPath = $GaugesPath
+    $candidates = @($GaugesPath)
 }
 else {
-    $gaugesPath = Join-Path $here (Join-Path '..' (Join-Path '..' 'windows\gauges.ps1'))
+    $candidates = @(
+        (Join-Path $here 'gauges.ps1'),
+        (Join-Path $here (Join-Path '..' (Join-Path '..' 'windows\gauges.ps1')))
+    )
 }
 
-foreach ($path in @($simulatorPath, $gaugesPath)) {
-    if (-not (Test-Path -LiteralPath $path)) {
-        throw "Missing file: $path"
+$gaugesPath = $null
+foreach ($candidate in $candidates) {
+    if (Test-Path -LiteralPath $candidate) {
+        $gaugesPath = (Resolve-Path -LiteralPath $candidate).Path
+        break
     }
+}
+
+if (-not $gaugesPath) {
+    throw "Could not find gauges.ps1. Looked in: $($candidates -join '; '). Keep gauges.ps1 next to simulate.ps1 or pass -GaugesPath."
+}
+
+if (-not (Test-Path -LiteralPath $simulatorPath)) {
+    throw "Missing file: $simulatorPath"
 }
 
 $pwshPath = (Get-Process -Id $PID).Path

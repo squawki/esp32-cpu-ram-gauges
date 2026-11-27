@@ -42,6 +42,16 @@ If script execution is disabled on the machine, start it like this instead:
 powershell -ExecutionPolicy Bypass -File .\simulator\windows\simulate.ps1
 ```
 
+### All three files in one folder
+
+The launcher looks for `gauges.ps1` next to itself first, so the three scripts can be copied into any single folder — `C:\gauges`, a USB stick, wherever — and run from there:
+
+```powershell
+C:\gauges> .\simulate.ps1
+```
+
+Failing that it looks for `..\..\windows\gauges.ps1` (the repository layout), and `-GaugesPath` overrides both.
+
 ## Headless mode
 
 `-NoUi` runs the simulator without the dials and prints its log when the test finishes. Useful for a quick check or for capturing output:
