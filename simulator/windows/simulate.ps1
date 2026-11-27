@@ -4,9 +4,9 @@
     Runs the gauge simulator and gauges.ps1 together.
 
 .DESCRIPTION
-    Starts windows/simulator.ps1 (a fake ESP32-C3 with two moving-coil dials and
-    an RGB LED) and then runs windows/gauges.ps1 against it over TCP, so the
-    whole telemetry path can be exercised without any hardware.
+    Starts simulator/windows/simulator.ps1 (a fake ESP32-C3 with two moving-coil
+    dials and an RGB LED) and then runs windows/gauges.ps1 against it over TCP,
+    so the whole telemetry path can be exercised without any hardware.
 
     By default the simulator opens in its own console window so the dials stay
     visible. With -NoUi it runs headless and its log is printed when the test
@@ -32,6 +32,10 @@
 .PARAMETER KeepSimulatorOpen
     Leave the simulator window open after gauges.ps1 exits.
 
+.PARAMETER GaugesPath
+    Path to gauges.ps1. Defaults to ../../windows/gauges.ps1 relative to this
+    script.
+
 .EXAMPLE
     .\simulate.ps1
 
@@ -56,12 +60,20 @@ param(
     [int]$CheckInterval = 0,
     [int]$BlinkInterval = 0,
 
+    [string]$GaugesPath = '',
+
     [switch]$KeepSimulatorOpen
 )
 
 $here = $PSScriptRoot
 $simulatorPath = Join-Path $here 'simulator.ps1'
-$gaugesPath = Join-Path $here 'gauges.ps1'
+
+if ($GaugesPath) {
+    $gaugesPath = $GaugesPath
+}
+else {
+    $gaugesPath = Join-Path $here (Join-Path '..' (Join-Path '..' 'windows\gauges.ps1'))
+}
 
 foreach ($path in @($simulatorPath, $gaugesPath)) {
     if (-not (Test-Path -LiteralPath $path)) {

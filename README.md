@@ -311,20 +311,20 @@ CPU utilisation comes from `Win32_PerfFormattedData_PerfOS_Processor` and memory
 
 ### Simulator
 
-`windows/simulator.ps1` pretends to be the ESP32, so the telemetry path can be tested without hardware. It accepts the same commands, replies with the same acknowledgements, and reproduces the firmware's behaviour: a 3 second communication timeout, `SIGNAL LOST`, a red LED at full brightness and a sweeping needle pair.
+`simulator/windows/simulator.ps1` pretends to be the ESP32, so the telemetry path can be tested without hardware. It accepts the same commands, replies with the same acknowledgements, and reproduces the firmware's behaviour: a 3 second communication timeout, `SIGNAL LOST`, a red LED at full brightness and a sweeping needle pair.
 
-`windows/simulate.ps1` starts both and shows the dials:
+`simulator/windows/simulate.ps1` starts both and shows the dials:
 
 ```powershell
-.\simulate.ps1
+.\simulator\windows\simulate.ps1
 ```
 
 The dials and the LED are drawn in the simulator's console window. The simulator and the script talk over TCP on `127.0.0.1:7777`, so no virtual serial driver is needed.
 
 ```powershell
-.\simulate.ps1 -Duration 60                 # stop after a minute
-.\simulate.ps1 -NoUi                        # headless, one status line per second
-.\simulate.ps1 -InternetCheck -PingTarget 192.0.2.1 -CheckInterval 10 -BlinkInterval 8
+.\simulator\windows\simulate.ps1 -Duration 60                 # stop after a minute
+.\simulator\windows\simulate.ps1 -NoUi                        # headless, one status line per second
+.\simulator\windows\simulate.ps1 -InternetCheck -PingTarget 192.0.2.1 -CheckInterval 10 -BlinkInterval 8
 ```
 
 Useful options:
@@ -336,18 +336,20 @@ Useful options:
 | `-InternetCheck` | Enable outage detection so the purple blink can be watched |
 | `-KeepSimulatorOpen` | Leave the simulator window open after the script exits |
 
-`windows/simulator.ps1` can also be run on its own to check how the dials render at a given value:
+`simulator/windows/simulator.ps1` can also be run on its own to check how the dials render at a given value:
 
 ```powershell
-.\simulator.ps1 -Preview 42
+.\simulator\windows\simulator.ps1 -Preview 42
 ```
 
 To exercise the serial code path as well, install a virtual null-modem pair such as [com0com](https://sourceforge.net/projects/com0com/) (`COM10` <-> `COM11`), then run:
 
 ```powershell
-.\simulator.ps1 -Port COM11
-.\gauges.ps1 -Port COM10 -InternetCheck
+.\simulator\windows\simulator.ps1 -Port COM11
+.\windows\gauges.ps1 -Port COM10 -InternetCheck
 ```
+
+See [simulator/README.md](simulator/README.md) for the full option list, what the simulator reproduces, and troubleshooting.
 
 ### Running as a service
 
