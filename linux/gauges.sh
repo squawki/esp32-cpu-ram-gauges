@@ -153,12 +153,15 @@
 # - ESP32-C3-Zero connected by USB
 # - ESP32 firmware configured for the same 115200 baud serial connection
 #
-# The default serial device is /dev/ttyACM0.
+# The default serial device is /dev/ttyACM0. Set the DEVICE environment
+# variable to use a different port, for example a pseudo-terminal created by
+# simulator/linux/simulator.py.
 #
 # =============================================================================
 
 
-DEVICE="/dev/ttyACM0"
+# Override with the DEVICE environment variable when testing with the simulator.
+DEVICE="${DEVICE:-/dev/ttyACM0}"
 INTERVAL=1
 
 # How long to wait for ESP32 acknowledgements after sending CPU/RAM.
